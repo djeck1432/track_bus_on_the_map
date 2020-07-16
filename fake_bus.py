@@ -40,18 +40,21 @@ async def run_bus(url,bus_id,route):
 async def main():
     url = 'ws://127.0.0.1:8080'
     async with trio.open_nursery() as nursery:
-        while True:
-            for route in load_routes():
-                bus_id = route['name']
-                route = route['coordinates']
+        send_channel, receive_channel = trio.open_memory_channel(0)
+        async with send_channel, receive_channel:
 
-                random_position_route = random.randint(0,len(route))
-                print(type(random_position_route))
-                random_route = route[random_position_route:]
+            while True:
+                for route in load_routes():
+                    bus_id = route['name']
+                    route = route['coordinates']
 
-                nursery.start_soon(run_bus,url,bus_id,route)
-                nursery.start_soon(run_bus, url, bus_id, random_route)
-                await trio.sleep(0.1)
+                    random_position_route = random.randint(0,len(route))
+                    print(type(random_position_route))
+                    random_route = route[random_position_route:]
+
+                    nursery.start_soon(run_bus,url,bus_id,route)
+                    nursery.start_soon(run_bus, url, bus_id, random_route)
+                    await trio.sleep(0.1)
 
 if __name__=='__main__':
     trio.run(main)
