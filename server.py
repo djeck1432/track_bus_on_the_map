@@ -33,17 +33,19 @@ async def talk_to_browser(request):
     ws = await request.accept()
     logger.debug('talk to browser start')
     while True:
-        for bus_id,bus_data in buses.items():
+        copy_buses = buses.copy()
+        for bus_id,bus_data in copy_buses.items():
             bus_info = {
                 "msgType": "Buses",
-                "buses": bus_data
+                "buses": [bus_data]
             }
             try:
                 await ws.send_message(json.dumps(bus_info))
-                await trio.sleep(1)
+
             except ConnectionClosed:
                 logger.debug('talk to browser connection closed')
                 break
+        await trio.sleep(1)
 
 
 
