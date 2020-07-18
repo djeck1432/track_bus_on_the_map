@@ -4,7 +4,7 @@ from functools import partial
 import logging
 from trio_websocket import serve_websocket, ConnectionClosed
 
-buses = []
+buses = dict()
 logger = logging.getLogger('server')
 
 
@@ -16,7 +16,7 @@ async def fetch_bus_info(request):
             message = await ws.get_message()
             format_changed_message = json.loads(message)
             bus_info = format_changed_message
-            buses.append(bus_info)
+            buses[bus_info['busId']] = bus_info
             await trio.sleep(1)
         except ConnectionClosed:
             logger.debug('fetch bus info start connection closed')
@@ -33,9 +33,10 @@ async def talk_to_browser(request):
     ws = await request.accept()
     logger.debug('talk to browser start')
     while True:
+        for bus_id,bus_data in buses.items():
             bus_info = {
                 "msgType": "Buses",
-                "buses": buses
+                "buses": bus_data
             }
             try:
                 await ws.send_message(json.dumps(bus_info))
