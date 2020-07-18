@@ -7,6 +7,14 @@ from trio_websocket import serve_websocket, ConnectionClosed
 buses = dict()
 logger = logging.getLogger('server')
 
+def is_inside(bounds,lat,lng):
+    if bounds['south_lat'] >= lat <= bounds['north_lat']:
+        valid_lat = True
+    if bounds['west_lng'] >= lng <= bounds['east_lng']:
+        valid_lng = True
+    if valid_lat + valid_lng == 2:
+        return True
+
 
 async def fetch_bus_info(request):
     ws = await request.accept()
@@ -22,10 +30,24 @@ async def fetch_bus_info(request):
             logger.debug('fetch bus info start connection closed')
             break
 
+
 async def listen_browser(ws):
-    browser_message  = ws.get_message()
-    print(f'browser_message:{browser_message}')
-    await trio.sleep(1)
+    try:
+        browser_message = await ws.get_message()
+        print(f'browser_message:{browser_message}')
+    except ConnectionClosed:
+        logger.warning('ConnectionClosed')
+
+
+
+
+async def send_browser(ws,bus_info):
+    frontend_format = json.dumps(bus_info)
+    try:
+        await ws.send_message(frontend_format)
+    except ConnectionClosed:
+        logger.warning('ConnectionClosed')
+
 
 
 
@@ -34,23 +56,27 @@ async def talk_to_browser(request):
     logger.debug('talk to browser start')
     while True:
         copy_buses = buses.copy()
+        buses_data = []
         for bus_id,bus_data in copy_buses.items():
-            bus_info = {
-                "msgType": "Buses",
-                "buses": [bus_data]
-            }
-            try:
-                await ws.send_message(json.dumps(bus_info))
-
-            except ConnectionClosed:
-                logger.debug('talk to browser connection closed')
-                break
+            buses_data.append(bus_data)
+        bus_info = {
+            "msgType": "Buses",
+            "buses": buses_data
+        }
+        try:
+            async with trio.open_nursery() as nursery:
+                nursery.start_soon(listen_browser,ws)
+                nursery.start_soon(send_browser,ws,bus_info)
+        except ConnectionClosed:
+            logger.debug('talk to browser connection closed')
+            break
         await trio.sleep(1)
 
 
 
 async def fetch_info_server():
     await serve_websocket(fetch_bus_info,'127.0.0.1',8080,ssl_context=None)
+
 
 async def send_info_server():
     await serve_websocket(talk_to_browser,'127.0.0.1', 8000, ssl_context=None)
