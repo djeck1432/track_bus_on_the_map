@@ -16,17 +16,17 @@ TICK = 0.1
 @dataclass
 class Bus:
     busId: str
-    lan: int
-    lng: int
+    lat: float
+    lng: float
     route: str
 
 
 @dataclass
 class WindowBus:
-    south_lat: int
-    north_lat: int
-    west_lng: int
-    east_lng: int
+    south_lat: float
+    north_lat: float
+    west_lng: float
+    east_lng: float
     valid_lng: bool = False
     valid_lat: bool = False
 
@@ -40,29 +40,34 @@ class WindowBus:
 
 
 
-# def is_inside(bounds,lat,lng):
-#     valid_lng = False
-#     valid_lat = False
-#     if bounds['south_lat'] >= lat <= bounds['north_lat']:
-#         valid_lat = True
-#     if bounds['west_lng'] >= lng <= bounds['east_lng']:
-#         valid_lng = True
-#     if valid_lat + valid_lng == 2:
-#         return True
+def is_inside(bounds,lat,lng):
+    valid_lng = False
+    valid_lat = False
+    if bounds['south_lat'] >= lat <= bounds['north_lat']:
+        valid_lat = True
+    if bounds['west_lng'] >= lng <= bounds['east_lng']:
+        valid_lng = True
+    if valid_lat + valid_lng == 2:
+        return True
 
 
-async def fetch_bus_info(request):
+async def fetch_bus_info(request): #FIXME
     ws = await request.accept()
-    logger.debug('fetch bus info start')
+    logger.debug('fetch_bus_info start')
     while True:
         try:
             message = await ws.get_message()
             format_changed_message = json.loads(message)
+            #TODO сделать инициализацию Bus
             bus_info = format_changed_message
+
+            bus_info = Bus(bus_info['busId'],bus_info['lat'],bus_info['lng'],bus_info['route'])
+            print(bus_info.lat)
+            await trio.sleep(10)
             buses[bus_info['busId']] = bus_info
             await trio.sleep(TICK)
         except ConnectionClosed:
-            logger.debug('fetch bus info start connection closed')
+            logger.debug('fetch_bus_info connection closed')
             break
 
 
@@ -76,7 +81,6 @@ async def listen_browser(ws):
     except ConnectionClosed:
         logger.warning('ConnectionClosed')
 
-
 async def send_browser(ws,bus_info):
     frontend_format = json.dumps(bus_info)
     try:
@@ -84,14 +88,16 @@ async def send_browser(ws,bus_info):
     except ConnectionClosed:
         logger.warning('ConnectionClosed')
 
-async def send_buses(ws,copy_buses):
+async def send_buses(ws,copy_buses): #FIXME
+    #TODO переименовать copy_buses
+    #TODO уточнить какой bounds сейчас работает
     buses_data = []
     global bounds
     for bus_id, bus_data in copy_buses.items():
         lat = bus_data['lat']
         lng = bus_data['lng']
-        # if is_inside(bounds, lat, lng):
-        #     buses_data.append(bus_data)
+        if is_inside(bounds, lat, lng):
+            buses_data.append(bus_data)
     bus_info = {
         "msgType": "Buses",
         "buses": buses_data
@@ -102,7 +108,7 @@ async def send_buses(ws,copy_buses):
 
 async def talk_to_browser(request):
     ws = await request.accept()
-    logger.debug('talk to browser start')
+    logger.debug('talk_to_browser start')
     while True:
         copy_buses = buses.copy()
         buses_data = []
@@ -118,7 +124,7 @@ async def talk_to_browser(request):
                 nursery.start_soon(send_browser,ws,bus_info)
                 nursery.start_soon(send_buses,ws,copy_buses)
         except ConnectionClosed:
-            logger.debug('talk to browser connection closed')
+            logger.debug('talk_to_browser connection closed')
             break
         await trio.sleep(TICK)
 
