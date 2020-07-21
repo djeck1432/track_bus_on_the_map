@@ -51,19 +51,15 @@ def is_inside(bounds,lat,lng):
         return True
 
 
-async def fetch_bus_info(request): #FIXME
+async def fetch_bus_info(request):
     ws = await request.accept()
     logger.debug('fetch_bus_info start')
     while True:
         try:
             message = await ws.get_message()
             format_changed_message = json.loads(message)
-            #TODO сделать инициализацию Bus
-            bus_info = format_changed_message
-
-            bus_info = Bus(bus_info['busId'],bus_info['lat'],bus_info['lng'],bus_info['route'])
-            print(bus_info.lat)
-            await trio.sleep(10)
+            bus = format_changed_message
+            bus_info = Bus(bus['busId'],bus['lat'],bus['lng'],bus['route'])
             buses[bus_info['busId']] = bus_info
             await trio.sleep(TICK)
         except ConnectionClosed:
