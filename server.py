@@ -3,17 +3,52 @@ import json
 from functools import partial
 import logging
 from trio_websocket import serve_websocket, ConnectionClosed
+from dataclasses import dataclass
+from contextlib import suppress
+
 
 buses = dict()
 logger = logging.getLogger('server')
+bounds = None
+TICK = 0.1
 
-def is_inside(bounds,lat,lng):
-    if bounds['south_lat'] >= lat <= bounds['north_lat']:
-        valid_lat = True
-    if bounds['west_lng'] >= lng <= bounds['east_lng']:
-        valid_lng = True
-    if valid_lat + valid_lng == 2:
-        return True
+
+@dataclass
+class Bus:
+    busId: str
+    lan: int
+    lng: int
+    route: str
+
+
+@dataclass
+class WindowBus:
+    south_lat: int
+    north_lat: int
+    west_lng: int
+    east_lng: int
+    valid_lng: bool = False
+    valid_lat: bool = False
+
+    def is_inside(self,lat,lng):
+        if self.south_lat > lat < self.north_lat:
+            self.valid_lat = True
+        if self.west_lng > lng < self.east_lng:
+            self.valid_lng = True
+        if self.valid_lng + self.east_lng == 2:
+            return True
+
+
+
+# def is_inside(bounds,lat,lng):
+#     valid_lng = False
+#     valid_lat = False
+#     if bounds['south_lat'] >= lat <= bounds['north_lat']:
+#         valid_lat = True
+#     if bounds['west_lng'] >= lng <= bounds['east_lng']:
+#         valid_lng = True
+#     if valid_lat + valid_lng == 2:
+#         return True
 
 
 async def fetch_bus_info(request):
@@ -25,7 +60,7 @@ async def fetch_bus_info(request):
             format_changed_message = json.loads(message)
             bus_info = format_changed_message
             buses[bus_info['busId']] = bus_info
-            await trio.sleep(1)
+            await trio.sleep(TICK)
         except ConnectionClosed:
             logger.debug('fetch bus info start connection closed')
             break
@@ -35,10 +70,11 @@ async def listen_browser(ws):
     try:
         browser_message = await ws.get_message()
         print(f'browser_message:{browser_message}')
+        formated_message = json.loads(browser_message)
+        global bounds
+        bounds = formated_message['data']
     except ConnectionClosed:
         logger.warning('ConnectionClosed')
-
-
 
 
 async def send_browser(ws,bus_info):
@@ -48,6 +84,19 @@ async def send_browser(ws,bus_info):
     except ConnectionClosed:
         logger.warning('ConnectionClosed')
 
+async def send_buses(ws,copy_buses):
+    buses_data = []
+    global bounds
+    for bus_id, bus_data in copy_buses.items():
+        lat = bus_data['lat']
+        lng = bus_data['lng']
+        # if is_inside(bounds, lat, lng):
+        #     buses_data.append(bus_data)
+    bus_info = {
+        "msgType": "Buses",
+        "buses": buses_data
+    }
+    await ws.send_message(json.dumps(bus_info))
 
 
 
@@ -57,7 +106,7 @@ async def talk_to_browser(request):
     while True:
         copy_buses = buses.copy()
         buses_data = []
-        for bus_id,bus_data in copy_buses.items():
+        for bus_id, bus_data in copy_buses.items():
             buses_data.append(bus_data)
         bus_info = {
             "msgType": "Buses",
@@ -67,10 +116,11 @@ async def talk_to_browser(request):
             async with trio.open_nursery() as nursery:
                 nursery.start_soon(listen_browser,ws)
                 nursery.start_soon(send_browser,ws,bus_info)
+                nursery.start_soon(send_buses,ws,copy_buses)
         except ConnectionClosed:
             logger.debug('talk to browser connection closed')
             break
-        await trio.sleep(1)
+        await trio.sleep(TICK)
 
 
 
@@ -83,12 +133,14 @@ async def send_info_server():
 
 
 async def main():
-    logging.basicConfig(level=logging.DEBUG)
-    async with trio.open_nursery() as nursery:
-        nursery.start_soon(fetch_info_server)
-        nursery.start_soon(send_info_server)
+    with suppress('KeyboardInterrupt'):
+        logging.basicConfig(level=logging.DEBUG)
+        async with trio.open_nursery() as nursery:
+            nursery.start_soon(fetch_info_server)
+            nursery.start_soon(send_info_server)
 
 
 
 if __name__=='__main__':
     trio.run(main)
+
